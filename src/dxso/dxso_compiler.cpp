@@ -1850,11 +1850,6 @@ namespace dxvk {
         result.id = m_module.opFDiv(typeId,
           m_module.constfReplicant(1.0f, result.type.ccount),
           emitRegisterLoad(src[0], mask).id);
-
-        if (m_moduleInfo.options.d3d9FloatEmulation) {
-          result.id = m_module.opNMin(typeId, result.id,
-            m_module.constfReplicant(FLT_MAX, result.type.ccount));
-        }
         break;
       case DxsoOpcode::Rsq: 
         result.id = m_module.opFAbs(typeId,
@@ -1862,11 +1857,6 @@ namespace dxvk {
 
         result.id = m_module.opInverseSqrt(typeId,
           result.id);
-
-        if (m_moduleInfo.options.d3d9FloatEmulation) {
-          result.id = m_module.opNMin(typeId, result.id,
-            m_module.constfReplicant(FLT_MAX, result.type.ccount));
-        }
         break;
       case DxsoOpcode::Dp3: {
         DxsoRegMask srcMask(true, true, true, false);
@@ -1984,10 +1974,6 @@ namespace dxvk {
 
         DxsoRegisterValue dot = emitDot(vec3, vec3);
         dot.id = m_module.opInverseSqrt (scalarTypeId, dot.id);
-        if (m_moduleInfo.options.d3d9FloatEmulation) {
-          dot.id = m_module.opNMin        (scalarTypeId, dot.id,
-            m_module.constf32(FLT_MAX));
-        }
 
         // r * rsq(r . r);
         result.id = m_module.opVectorTimesScalar(
@@ -2101,10 +2087,6 @@ namespace dxvk {
       case DxsoOpcode::Log:
         result.id = m_module.opFAbs(typeId, emitRegisterLoad(src[0], mask).id);
         result.id = m_module.opLog2(typeId, result.id);
-        if (m_moduleInfo.options.d3d9FloatEmulation) {
-          result.id = m_module.opNMax(typeId, result.id,
-            m_module.constfReplicant(-FLT_MAX, result.type.ccount));
-        }
         break;
       case DxsoOpcode::Lrp:
         result.id = m_module.opFMix(typeId,
