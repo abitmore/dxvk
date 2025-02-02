@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 
 #include "dxvk_device_info.h"
@@ -11,7 +12,9 @@ namespace dxvk {
   
   class DxvkDevice;
   class DxvkInstance;
-  
+
+  using DxvkQueueCallback = std::function<void (bool)>;
+
   /**
    * \brief GPU vendors
    * Based on PCIe IDs.
@@ -30,6 +33,7 @@ namespace dxvk {
    */
   struct DxvkAdapterMemoryHeapInfo {
     VkMemoryHeapFlags heapFlags;
+    VkDeviceSize heapSize;
     VkDeviceSize memoryBudget;
     VkDeviceSize memoryAllocated;
   };
@@ -53,7 +57,32 @@ namespace dxvk {
     uint32_t transfer;
     uint32_t sparse;
   };
-  
+
+
+  /**
+   * \brief Adapter memory statistics
+   *
+   * Periodically updated by the devices using this adapter.
+   */
+  struct DxvkAdapterMemoryStats {
+    std::atomic<uint64_t> allocated = { 0u };
+    std::atomic<uint64_t> used = { 0u };
+  };
+
+
+  /**
+   * \brief Device import info
+   */
+  struct DxvkDeviceImportInfo {
+    VkDevice device;
+    VkQueue queue;
+    uint32_t queueFamily;
+    uint32_t extensionCount;
+    const char** extensionNames;
+    const VkPhysicalDeviceFeatures2* features;
+    DxvkQueueCallback queueCallback;
+  };
+
   /**
    * \brief DXVK adapter
    * 
@@ -196,26 +225,28 @@ namespace dxvk {
             DxvkDeviceFeatures  enabledFeatures);
     
     /**
-     * \brief Registers memory allocation
+     * \brief Imports a foreign device
      * 
-     * Updates memory alloc info accordingly.
-     * \param [in] heap Memory heap index
-     * \param [in] bytes Allocation size
+     * \param [in] instance Parent instance
+     * \param [in] args Device import info
+     * \returns Device handle
      */
-    void notifyHeapMemoryAlloc(
-            uint32_t            heap,
-            VkDeviceSize        bytes);
+    Rc<DxvkDevice> importDevice(
+      const Rc<DxvkInstance>&   instance,
+      const DxvkDeviceImportInfo& args);
     
     /**
-     * \brief Registers memory deallocation
+     * \brief Registers heap memory allocation
      * 
      * Updates memory alloc info accordingly.
      * \param [in] heap Memory heap index
-     * \param [in] bytes Allocation size
+     * \param [in] allocated Allocated size delta
+     * \param [in] used Used size delta
      */
-    void notifyHeapMemoryFree(
+    void notifyMemoryStats(
             uint32_t            heap,
-            VkDeviceSize        bytes);
+            int64_t             allocated,
+            int64_t             used);
     
     /**
      * \brief Tests if the driver matches certain criteria
@@ -227,8 +258,17 @@ namespace dxvk {
      */
     bool matchesDriver(
             VkDriverIdKHR       driver,
-            uint32_t            minVer,
-            uint32_t            maxVer) const;
+            Version             minVer,
+            Version             maxVer) const;
+
+    /**
+     * \brief Tests if the driver matches certain criteria
+     *
+     * \param [in] driver Driver ID
+     * \returns \c True if the driver matches these criteria
+     */
+    bool matchesDriver(
+            VkDriverIdKHR       driver) const;
     
     /**
      * \brief Logs DXVK adapter info
@@ -246,7 +286,34 @@ namespace dxvk {
      * \returns \c true if the system has unified memory.
      */
     bool isUnifiedMemoryArchitecture() const;
-    
+
+    /**
+     * \brief Registers a relationship with another GPU
+     *
+     * Used for display enumeration purposes.
+     * \param [in] dgpu Dedicated GPU adatper
+     */
+    void linkToDGPU(Rc<DxvkAdapter> dgpu) {
+        dgpu->m_linkedIGPUAdapter = this;
+        m_linkedToDGPU = true;
+    }
+
+    /**
+     * \brief Retrieves linked integrated GPU
+     * \returns Integrated GPU adapter
+     */
+    Rc<DxvkAdapter> linkedIGPUAdapter() const {
+        return m_linkedIGPUAdapter;
+    }
+
+    /**
+     * \brief Checks whether the GPU is linked
+     * \returns \c true if the GPU is linked
+     */
+    bool isLinkedToDGPU() const {
+        return m_linkedToDGPU;
+    }
+
   private:
     
     Rc<vk::InstanceFn>  m_vki;
@@ -258,12 +325,14 @@ namespace dxvk {
     DxvkDeviceFeatures  m_deviceFeatures;
 
     bool                m_hasMemoryBudget;
-    
+
+    Rc<DxvkAdapter>     m_linkedIGPUAdapter;
+    bool                m_linkedToDGPU = false;
+
     std::vector<VkQueueFamilyProperties> m_queueFamilies;
 
-    std::array<std::atomic<VkDeviceSize>, VK_MAX_MEMORY_HEAPS> m_heapAlloc;
+    std::array<DxvkAdapterMemoryStats, VK_MAX_MEMORY_HEAPS> m_memoryStats = { };
 
-    void initHeapAllocInfo();
     void queryExtensions();
     void queryDeviceInfo();
     void queryDeviceFeatures();
@@ -273,10 +342,20 @@ namespace dxvk {
             VkQueueFlags          mask,
             VkQueueFlags          flags) const;
     
+    std::vector<DxvkExt*> getExtensionList(
+            DxvkDeviceExtensions&   devExtensions);
+
+    static void initFeatureChain(
+            DxvkDeviceFeatures&   enabledFeatures,
+      const DxvkDeviceExtensions& devExtensions,
+      const DxvkInstanceExtensions& insExtensions);
+
     static void logNameList(const DxvkNameList& names);
     static void logFeatures(const DxvkDeviceFeatures& features);
     static void logQueueFamilies(const DxvkAdapterQueueIndices& queues);
     
+    static Version decodeDriverVersion(VkDriverId driverId, uint32_t version);
+
   };
   
 }

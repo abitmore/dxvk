@@ -18,6 +18,10 @@ namespace dxvk {
     None  = 5,
   };
   
+#ifdef _WIN32
+  using PFN_wineLogOutput = int (__cdecl *)(const char *);
+#endif
+
   /**
    * \brief Logger
    * 
@@ -44,19 +48,25 @@ namespace dxvk {
     
   private:
     
-    static Logger s_instance;
+    static Logger     s_instance;
     
-    const LogLevel m_minLevel;
+    const LogLevel    m_minLevel;
+    const std::string m_fileName;
     
-    dxvk::mutex   m_mutex;
-    std::ofstream m_fileStream;
-    
+    dxvk::mutex       m_mutex;
+    std::ofstream     m_fileStream;
+
+    bool              m_initialized = false;
+#ifdef _WIN32
+    PFN_wineLogOutput m_wineLogOutput = nullptr;
+#endif
+
     void emitMsg(LogLevel level, const std::string& message);
     
-    static LogLevel getMinLogLevel();
-    
-    static std::string getFileName(
+    std::string getFileName(
       const std::string& base);
+
+    static LogLevel getMinLogLevel();
 
   };
   
